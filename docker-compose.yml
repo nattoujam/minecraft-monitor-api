@@ -1,0 +1,11 @@
+services:
+  mc-monitor:
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+    network_mode: host
+    environment:
+      HOST: "192.168.0.2"
+      FRONTEND_ORIGIN: "http://localhost:5173"
+      WOL_TARGET_MAC_ADDRESS: "xx:xx:xx:xx:xx:xx"
+      WOL_FROM_IP_ADDRESS: "192.168.0.3"
