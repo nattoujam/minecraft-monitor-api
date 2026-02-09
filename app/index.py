@@ -1,9 +1,14 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from prometheus_client import (
+    generate_latest,
+    CONTENT_TYPE_LATEST,
+)
 
 from app.helper import get_minecraft_status, wake_on_lan
+from app.metrics import build_metrics
 from app.command import execute_command
 
 
@@ -63,3 +68,14 @@ def wake():
             'ok': False,
             'message': 'WOL Failed'
         }
+
+
+@app.get("/metrics")
+def metrics():
+    status = get_minecraft_status(host=HOST)
+    registry = build_metrics(status)
+
+    return Response(
+        generate_latest(registry),
+        media_type=CONTENT_TYPE_LATEST,
+    )
