@@ -21,6 +21,7 @@ def load_env(name: str) -> str:
 
 
 HOST = load_env('HOST')
+PORT = int(load_env('PORT'))
 FRONTEND_ORIGIN = load_env("FRONTEND_ORIGIN")
 WOL_TARGET_MAC_ADDRESS = load_env("WOL_TARGET_MAC_ADDRESS")
 WOL_FROM_IP_ADDRESS = load_env("WOL_FROM_IP_ADDRESS")
@@ -47,7 +48,7 @@ class CommandRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return get_minecraft_status(host=HOST)
+    return get_minecraft_status(host=HOST, port=PORT)
 
 
 @app.post("/command")
@@ -72,7 +73,7 @@ def wake():
 
 @app.get("/metrics")
 def metrics():
-    status = get_minecraft_status(host=HOST)
+    status = get_minecraft_status(host=HOST, port=PORT)
     registry = build_metrics(status)
 
     return Response(
