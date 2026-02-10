@@ -1,15 +1,12 @@
 import os
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
-from prometheus_client import (
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
 
-from app.helper import get_minecraft_status, wake_on_lan
+from app.helper import MinecraftStatus, get_minecraft_status, wake_on_lan
 from app.metrics import build_metrics
-from app.command import execute_command
 
 
 def load_env(name: str) -> str:
@@ -47,32 +44,26 @@ class CommandRequest(BaseModel):
 
 
 @app.get("/health")
-def health():
+def health() -> MinecraftStatus:
     return get_minecraft_status(host=HOST, port=PORT)
 
 
-@app.post("/command")
-def command(req: CommandRequest):
-    return execute_command(req.code)
+class WakeOnLanResponse(BaseModel):
+    ok: bool
+    message: str
 
 
 @app.post("/wake")
-def wake():
+def wake() -> WakeOnLanResponse:
     result = wake_on_lan(WOL_TARGET_MAC_ADDRESS, WOL_FROM_IP_ADDRESS)
     if result:
-        return {
-            'ok': True,
-            'message': 'WOL Success'
-        }
+        return WakeOnLanResponse(ok=True, message='WOL Success')
     else:
-        return {
-            'ok': False,
-            'message': 'WOL Failed'
-        }
+        return WakeOnLanResponse(ok=False, message='WOL Failed')
 
 
 @app.get("/metrics")
-def metrics():
+def metrics() -> Response:
     status = get_minecraft_status(host=HOST, port=PORT)
     registry = build_metrics(status)
 

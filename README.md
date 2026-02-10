@@ -23,19 +23,32 @@ response
   "max": 20,
   "motd": "Forge Survival Server",
   "version": "1.20.1",
-  "latency_ms": 15
+  "latency_ms": 15,
+  "icon": "<bolb text>"
 }
 ```
 
 ```json
 {
-  "state": "stopped"
+  "state": "stopped",
+  "online": null,
+  "max": null,
+  "motd": null,
+  "version": null,
+  "latency_ms": null,
+  "icon": null
 }
 ```
 
 ```json
 {
-  "state": "starting"
+  "state": "starting",
+  "online": null,
+  "max": null,
+  "motd": null,
+  "version": null,
+  "latency_ms": null,
+  "icon": null
 }
 ```
 

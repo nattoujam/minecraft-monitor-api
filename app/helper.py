@@ -1,30 +1,42 @@
-from mcstatus import JavaServer
-from wakeonlan import send_magic_packet
-from netaddr import IPAddress, EUI, AddrFormatError
 import socket
 
+from mcstatus import JavaServer
+from netaddr import EUI, AddrFormatError, IPAddress
+from pydantic import BaseModel
+from wakeonlan import send_magic_packet
 
-def get_minecraft_status(host="localhost", port=25565, timeout=2):
+
+class MinecraftStatus(BaseModel):
+    state: str
+    online: int | None = None
+    max: int | None = None
+    motd: str | None = None
+    version: str | None = None
+    latency_ms: float | None = None
+    icon: str | None = None
+
+
+def get_minecraft_status(host: str = "localhost", port: int = 25565) -> MinecraftStatus:
     try:
-        server = JavaServer(host, port, timeout=timeout)
+        server = JavaServer(host, port, timeout=2)
         status = server.status()
 
-        return {
-            "state": "running",
-            "online": status.players.online,
-            "max": status.players.max,
-            "motd": status.motd.parsed[0],
-            "version": status.version.name,
-            "latency_ms": status.latency,
-            "icon": status.icon,
-        }
+        return MinecraftStatus(
+            state="running",
+            online=status.players.online,
+            max=status.players.max,
+            motd=str(status.motd.parsed[0]),
+            version=status.version.name,
+            latency_ms=status.latency,
+            icon=status.icon
+        )
 
     except socket.timeout:
-        return {"state": "stopped"}
+        return MinecraftStatus(state="stopped")
     except ConnectionRefusedError:
-        return {"state": "starting"}
-    except Exception as e:
-        return {"state": "unknown", "error": str(e)}
+        return MinecraftStatus(state="starting")
+    except Exception:
+        return MinecraftStatus(state="unknown")
 
 
 def wake_on_lan(mac_address: str, interface_ip: str) -> bool:

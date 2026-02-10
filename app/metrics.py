@@ -1,12 +1,11 @@
-from prometheus_client import (
-    Gauge,
-    CollectorRegistry,
-)
+from prometheus_client import CollectorRegistry, Gauge
+
+from app.helper import MinecraftStatus
 
 registry = CollectorRegistry()
 
 
-def build_metrics(status):
+def build_metrics(status: MinecraftStatus):
     registry = CollectorRegistry()
 
     up = Gauge(
@@ -16,13 +15,13 @@ def build_metrics(status):
         registry=registry
     )
     for s in ["running", "stopping", "starting", "unknown"]:
-        up.labels(state=s).set(1 if s == status['state'] else 0)
+        up.labels(state=s).set(1 if s == status.state else 0)
 
     players = Gauge(
         "minecraft_player_online",
         "Online players",
         registry=registry
     )
-    players.set(status['online'])
+    players.set(status.online or 0)
 
     return registry
