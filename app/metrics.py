@@ -14,7 +14,7 @@ def build_metrics(status: MinecraftStatus):
         ["state"],
         registry=registry
     )
-    for s in ["running", "stopping", "starting", "unknown"]:
+    for s in ["running", "stopped", "starting", "unknown"]:
         up.labels(state=s).set(1 if s == status.state else 0)
 
     players = Gauge(
