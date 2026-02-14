@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+prometheus-client
 mcstatus
 wakeonlan
 netaddr

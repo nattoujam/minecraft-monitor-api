@@ -1,6 +1,6 @@
 services:
   mc-monitor:
-    build: 
+    build:
       context: .
       dockerfile: ./Dockerfile
     network_mode: host
@@ -10,3 +10,5 @@ services:
       FRONTEND_ORIGIN: "http://localhost:5173"
       WOL_TARGET_MAC_ADDRESS: "xx:xx:xx:xx:xx:xx"
       WOL_FROM_IP_ADDRESS: "192.168.0.3"
+      API_USERNAME: "admin"
+      API_PASSWORD: "CHANGE_ME"
