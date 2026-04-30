@@ -1,8 +1,11 @@
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import time
+import urllib.error
+import urllib.request
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +31,9 @@ WOL_TARGET_MAC_ADDRESS = load_env("WOL_TARGET_MAC_ADDRESS")
 WOL_FROM_IP_ADDRESS = load_env("WOL_FROM_IP_ADDRESS")
 API_USERNAME = load_env("API_USERNAME")
 API_PASSWORD = load_env("API_PASSWORD")
+
+# Dev only: set to mock server control URL (e.g. http://localhost:8080)
+MOCK_CTRL_URL = os.getenv("MOCK_CTRL_URL")
 
 
 app = FastAPI(
@@ -119,6 +125,35 @@ def wake() -> WakeOnLanResponse:
         return WakeOnLanResponse(ok=True, message='WOL Success')
     else:
         return WakeOnLanResponse(ok=False, message='WOL Failed')
+
+
+class MockStateRequest(BaseModel):
+    state: str
+
+
+@app.post("/dev/mock/state")
+def dev_mock_state(req: MockStateRequest):
+    if not MOCK_CTRL_URL:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    data = json.dumps({"state": req.state}).encode()
+    print(f"[dev] POST /dev/mock/state body={req.model_dump()}")
+    request = urllib.request.Request(
+        f"{MOCK_CTRL_URL}/state",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        print(f"[dev] mock responded {e.code}: {body}")
+        raise HTTPException(status_code=e.code, detail=body)
+    except Exception as e:
+        print(f"[dev] mock request failed: {e}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 @app.get("/metrics")
