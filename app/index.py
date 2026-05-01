@@ -1,8 +1,8 @@
 import hashlib
 import hmac
 import json
-import os
 import secrets
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -12,39 +12,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
-from app.helper import MinecraftStatus, get_minecraft_status, wake_on_lan
+from app.config import AppConfig, ServerConfig, load_config
+from app.helper import MinecraftStatus, get_minecraft_status
 from app.metrics import build_metrics
 
-
-def load_env(name: str) -> str:
-    env = os.getenv(name)
-    if not env:
-        raise RuntimeError(f'{name} is not set.')
-
-    return env
-
-
-HOST = load_env('HOST')
-PORT = int(load_env('PORT'))
-FRONTEND_ORIGIN = load_env('FRONTEND_ORIGIN')
-WOL_TARGET_MAC_ADDRESS = load_env('WOL_TARGET_MAC_ADDRESS')
-WOL_FROM_IP_ADDRESS = load_env('WOL_FROM_IP_ADDRESS')
-API_USERNAME = load_env('API_USERNAME')
-API_PASSWORD = load_env('API_PASSWORD')
-
-# Dev only: set to mock server control URL (e.g. http://localhost:8080)
-MOCK_CTRL_URL = os.getenv('MOCK_CTRL_URL')
-
+config: AppConfig = load_config()
 
 app = FastAPI(
     title='Minecraft Server Monitor API',
     description='Forge / Vanilla 対応 Minecraft サーバー監視 API',
-    version='1.0.0',
+    version='2.0.0',
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
+    allow_origins=[config.api.frontend_origin],
     allow_credentials=True,
     allow_methods=['GET', 'POST'],
     allow_headers=['*'],
@@ -64,7 +46,7 @@ def verify_session(request: Request):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Session expired')
 
         expected_signature = hmac.new(
-            API_PASSWORD.encode('utf-8'), expires_at_str.encode('utf-8'), hashlib.sha256
+            config.api.password.encode('utf-8'), expires_at_str.encode('utf-8'), hashlib.sha256
         ).hexdigest()
 
         if not secrets.compare_digest(signature, expected_signature):
@@ -74,6 +56,13 @@ def verify_session(request: Request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid session format')
 
 
+def get_server_or_404(server_code: str) -> ServerConfig:
+    server = config.get_server(server_code)
+    if not server:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Server '{server_code}' not found")
+    return server
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -81,15 +70,15 @@ class LoginRequest(BaseModel):
 
 @app.post('/api/login')
 def login(creds: LoginRequest, response: Response):
-    match_username = secrets.compare_digest(creds.username.encode('utf8'), API_USERNAME.encode('utf8'))
-    match_password = secrets.compare_digest(creds.password.encode('utf8'), API_PASSWORD.encode('utf8'))
+    match_username = secrets.compare_digest(creds.username.encode('utf8'), config.api.username.encode('utf8'))
+    match_password = secrets.compare_digest(creds.password.encode('utf8'), config.api.password.encode('utf8'))
 
     if not (match_username and match_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Incorrect username or password')
 
-    expires_at = time.time() + (7 * 24 * 60 * 60)  # 7 days
+    expires_at = time.time() + (7 * 24 * 60 * 60)
     signature = hmac.new(
-        API_PASSWORD.encode('utf-8'), str(expires_at).encode('utf-8'), hashlib.sha256
+        config.api.password.encode('utf-8'), str(expires_at).encode('utf-8'), hashlib.sha256
     ).hexdigest()
     session_id = f'{expires_at}:{signature}'
 
@@ -108,38 +97,66 @@ def check_auth() -> str:
     return 'ok'
 
 
-@app.get('/api/health', dependencies=[Depends(verify_session)])
-def health() -> MinecraftStatus:
-    return get_minecraft_status(host=HOST, port=PORT)
+class ServerInfo(BaseModel):
+    code: str
+    name: str
 
 
-class WakeOnLanResponse(BaseModel):
+@app.get('/api/server/list', dependencies=[Depends(verify_session)])
+def list_servers() -> list[ServerInfo]:
+    return [
+        ServerInfo(code=s.code, name=s.name)
+        for s in config.servers
+    ]
+
+
+@app.get('/api/server/{server_code}/health', dependencies=[Depends(verify_session)])
+def health(server_code: str) -> MinecraftStatus:
+    server = get_server_or_404(server_code)
+    return get_minecraft_status(host=server.host, port=server.port)
+
+
+class ServerCommandResponse(BaseModel):
     ok: bool
     message: str
 
 
-@app.post('/api/wake', dependencies=[Depends(verify_session)])
-def wake() -> WakeOnLanResponse:
-    result = wake_on_lan(WOL_TARGET_MAC_ADDRESS, WOL_FROM_IP_ADDRESS)
-    if result:
-        return WakeOnLanResponse(ok=True, message='WOL Success')
-    else:
-        return WakeOnLanResponse(ok=False, message='WOL Failed')
+def _run_command(command: str, label: str) -> ServerCommandResponse:
+    try:
+        subprocess.Popen(command, shell=True)
+        print(f'[cmd] {label}: {command}')
+        return ServerCommandResponse(ok=True, message='command launched')
+    except Exception as e:
+        print(f'[cmd] {label} failed: {e}')
+        return ServerCommandResponse(ok=False, message=str(e))
+
+
+@app.post('/api/server/{server_code}/start', dependencies=[Depends(verify_session)])
+def start(server_code: str) -> ServerCommandResponse:
+    server = get_server_or_404(server_code)
+    return _run_command(server.start_command, f'{server_code}/start')
+
+
+@app.post('/api/server/{server_code}/stop', dependencies=[Depends(verify_session)])
+def stop(server_code: str) -> ServerCommandResponse:
+    server = get_server_or_404(server_code)
+    return _run_command(server.stop_command, f'{server_code}/stop')
 
 
 class MockStateRequest(BaseModel):
     state: str
 
 
-@app.post('/dev/mock/state')
-def dev_mock_state(req: MockStateRequest):
-    if not MOCK_CTRL_URL:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Not found')
+@app.post('/dev/mock/{server_code}/state')
+def dev_mock_state(server_code: str, req: MockStateRequest):
+    server = get_server_or_404(server_code)
+    if not server.mock_ctrl_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Mock not configured for this server')
 
     data = json.dumps({'state': req.state}).encode()
-    print(f'[dev] POST /dev/mock/state body={req.model_dump()}')
+    print(f'[dev] POST /dev/mock/{server_code}/state body={req.model_dump()}')
     request = urllib.request.Request(
-        f'{MOCK_CTRL_URL}/state',
+        f'{server.mock_ctrl_url}/state',
         data=data,
         headers={'Content-Type': 'application/json'},
         method='POST',
@@ -158,10 +175,6 @@ def dev_mock_state(req: MockStateRequest):
 
 @app.get('/metrics')
 def metrics() -> Response:
-    status = get_minecraft_status(host=HOST, port=PORT)
-    registry = build_metrics(status)
-
-    return Response(
-        generate_latest(registry),
-        media_type=CONTENT_TYPE_LATEST,
-    )
+    results = [(s.code, get_minecraft_status(host=s.host, port=s.port)) for s in config.servers]
+    registry = build_metrics(results)
+    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)

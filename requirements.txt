@@ -2,6 +2,4 @@ fastapi
 uvicorn[standard]
 prometheus-client
 mcstatus
-wakeonlan
-netaddr
-prometheus-client
+pyyaml

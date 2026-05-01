@@ -1,0 +1,21 @@
+api:
+  frontend_origin: http://localhost:5173
+  username: admin
+  password: CHANGE_ME
+
+servers:
+  - code: survival
+    name: サバイバル
+    host: localhost
+    port: 25565
+    start_command: 'bash mock/start_bg.sh survival 25565 8080'
+    stop_command: 'bash mock/stop_bg.sh survival'
+    mock_ctrl_url: http://localhost:8080
+
+  - code: creative
+    name: クリエイティブ
+    host: localhost
+    port: 25566
+    start_command: 'bash mock/start_bg.sh creative 25566 8081'
+    stop_command: 'bash mock/stop_bg.sh creative'
+    mock_ctrl_url: http://localhost:8081
